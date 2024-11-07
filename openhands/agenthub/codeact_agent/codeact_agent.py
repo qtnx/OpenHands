@@ -2,6 +2,7 @@ import json
 import os
 from collections import deque
 from itertools import islice
+import traceback
 
 from litellm import ModelResponse
 
@@ -128,6 +129,9 @@ class CodeActAgent(Agent):
             self.initial_user_message = self.prompt_manager.initial_user_message
 
         self.pending_actions: deque[Action] = deque()
+        self.plan_approved = False  # Track if plan has been approved
+        self.plan = None  # Store the execution plan
+        self.waiting_for_feedback = False
 
     def get_action_message(
         self,
@@ -317,54 +321,204 @@ class CodeActAgent(Agent):
     def reset(self) -> None:
         """Resets the CodeAct Agent."""
         super().reset()
+        self.plan_approved = False
+        self.plan = None
+        self.waiting_for_feedback = False
 
     def step(self, state: State) -> Action:
-        """Performs one step using the CodeAct Agent.
-        This includes gathering info on previous steps and prompting the model to make a command to execute.
+        # Check if waiting for feedback
+        if self.waiting_for_feedback:
+            last_user_message = state.get_last_user_message()
+            if last_user_message:
+                self.waiting_for_feedback = False
+                return self._handle_plan_feedback(last_user_message, state)
+            return MessageAction(
+                content="Waiting for your feedback on the plan...",
+                wait_for_response=True
+            )
 
-        Parameters:
-        - state (State): used to get updated info
+        # Create and get approval for plan if not done yet
+        if not self.plan_approved:
+            if not self.plan:
+                # Generate initial plan
+                plan_messages = self._get_messages(state)
+                prompt = text=f"""You are an AI task planner responsible for creating detailed execution plans for complex tasks that will be solved by multiple AI language models with varying capabilities. Your goal is to analyze the given task, create a comprehensive plan, and present it in a structured format.
 
-        Returns:
-        - CmdRunAction(command) - bash command to run
-        - IPythonRunCellAction(code) - IPython code to run
-        - AgentDelegateAction(agent, inputs) - delegate action for (sub)task
-        - MessageAction(content) - Message action to run (e.g. ask for clarification)
-        - AgentFinishAction() - end the interaction
-        """
-        # Continue with pending actions if any
-        if self.pending_actions:
-            return self.pending_actions.popleft()
+Please create a detailed execution plan for this task. Follow these steps:
 
-        # if we're done, go back
-        last_user_message = state.get_last_user_message()
-        if last_user_message and last_user_message.strip() == '/exit':
-            return AgentFinishAction()
+<user_prompt>
+{self.initial_user_message}
+</user_prompt>
 
-        # prepare what we want to send to the LLM
+1. Analyze the task complexity and requirements.
+2. Rank the task into tiers based on the required model capabilities.
+3. Create a step-by-step breakdown of actions to be taken.
+4. Identify potential risks or considerations.
+5. Define expected outcomes at each step.
+
+Task ranking for model: 
+- Tier1 (Smartest): Required for complex architectural analysis, design pattern recognition, and high-level system relationships. Needs deep understanding of software engineering principles and ability to make sophisticated connections.
+- Tier2: Suitable for analyzing individual components, documenting functionality, and explaining code flow. Requires good comprehension of programming concepts but less architectural expertise.
+- Tier3 (Smallest, 2b-8b): Can handle basic code documentation, syntax explanation, simple function execution, summarize output. Suitable for line-by-line explanations and basic code structure documentation.
+
+Use the following structure for your analysis and plan:
+
+<execution_plan>
+
+<step_by_step_breakdown>
+Provide a detailed breakdown of actions to be taken, please use code language if needed. For each main step, to ensure thoroughness:
+1. [Step 1]
+   a. [Substep 1a] `[code if any]` [model name assign use @] [Detailed explanation of the expected outcome for the next step]
+   b. [SubStep 1b] `[code if any]` [model name assign use @] [Detailed explanation of the expected outcome for the next step]
+   c. [Subtep 1c] `[code if any]` [model name assign use @] [Detailed explanation of the expected outcome for the next step]
+2. [Step 2]
+   a. [Substep 2a] `[code if any]` [model name assign use @] [Detailed explanation of the expected outcome for the next step]
+   b. [Substep 2b] `[code if any]` [model name assign use @] [Detailed explanation of the expected outcome for the next step]
+   c. [Substep 2c] `[code if any]` [model name assign use @] [Detailed explanation of the expected outcome for the next step]
+[Continue with additional steps as needed]
+</step_by_step_breakdown>
+
+<potential_risks>
+List and briefly explain any potential risks or considerations:
+1. [Risk 1]: [Explanation]
+2. [Risk 2]: [Explanation]
+[Continue with additional risks as needed]
+</potential_risks>
+
+<expected_outcomes>
+Define the expected outcomes at each main step:
+1. [Outcome for Step 1]: [Description]
+2. [Outcome for Step 2]: [Description]
+[Continue with outcomes for each main step]
+</expected_outcomes>
+</execution_plan>
+
+Please ensure that your plan is comprehensive, clear, and addresses all aspects of the task. Pay special attention to providing detailed substeps for each main action to be taken.
+                                         """
+                print("Prompt: ", prompt)
+                plan_messages.append(Message(
+                    role='system',
+                    content=[TextContent(text=prompt)]
+                ))
+                
+                plan_params = {
+                    'messages': self.llm.format_messages_for_llm(plan_messages),
+                }
+                plan_response = self.llm.completion(**plan_params)
+                self.plan = plan_response.choices[0].message.content
+
+                # Ask user to review plan
+                self.waiting_for_feedback = True
+                return MessageAction(
+                    content=f"Here is my proposed execution plan:\n\n{self.plan}\n\n"
+                           f"Please review this plan and respond with:\n"
+                           f"- 'approve' to proceed with execution\n"
+                           f"- 'modify <suggestions>' to request changes to the plan\n"
+                           f"- 'reject' to cancel execution",
+                    wait_for_response=True
+                )
+
+        # Proceed with normal execution once plan is approved
+        return self._execute_step(state)
+
+    def _handle_plan_feedback(self, feedback: str, state: State) -> Action:
+        """Handle user feedback on the execution plan"""
+        feedback = feedback.lower().strip()
+        
+        if "approve" in feedback:
+            self.plan_approved = True
+            return MessageAction(
+                content="Plan approved. Proceeding with execution.",
+                wait_for_response=False
+            )
+        elif "reject" in feedback:
+            self.plan = None
+            return AgentFinishAction(
+                thought="Plan rejected. Ending execution."
+            )
+        else:
+            # Handle modification request
+            modification_request = feedback.replace("modify", "").strip()
+            self.plan = None
+            
+            # Create new plan based on feedback
+            plan_messages = self._get_messages(state)
+            plan_messages.append(Message(
+                role='user',
+                content=[TextContent(text=f"Based on the following feedback:\n{modification_request}\n\n"
+                                       "Please create a revised execution plan that outlines:\n"
+                                       "1. The overall approach to solving the task\n"
+                                       "2. Step-by-step breakdown of actions to be taken\n"
+                                       "3. Any potential risks or considerations\n"
+                                       "4. Expected outcomes at each step")]
+            ))
+            
+            plan_params = {
+                'messages': self.llm.format_messages_for_llm(plan_messages),
+            }
+            plan_response = self.llm.completion(**plan_params)
+            self.plan = plan_response.choices[0].message.content
+
+            # Request approval for new plan
+            self.waiting_for_feedback = True
+            return MessageAction(
+                content=f"Here is my revised execution plan:\n\n{self.plan}\n\n"
+                       f"Please review this plan and respond with:\n"
+                       f"- 'approve' to proceed with execution\n"
+                       f"- 'modify <suggestions>' to request further changes\n"
+                       f"- 'reject' to cancel execution",
+                wait_for_response=True
+            )
+
+    def _execute_step(self, state: State) -> Action:
+        """Execute a single step after plan is approved"""
+        logger.debug(f"Executing step with plan: {self.plan}")
         messages = self._get_messages(state)
+        
+        # Add plan context to the messages
+        plan_context = Message(
+            role='user',
+            content=[TextContent(text=f"Following the approved plan:\n{self.plan}\n\nPlease execute the next step.")]
+        )
+        messages.append(plan_context)
+        
         params: dict = {
             'messages': self.llm.format_messages_for_llm(messages),
         }
+        
         if self.function_calling_active:
+            logger.debug("Function calling is active, adding tools")
             params['tools'] = self.tools
             params['parallel_tool_calls'] = False
         else:
+            logger.debug("Function calling not active, adding stop tokens")
             params['stop'] = [
                 '</execute_ipython>',
                 '</execute_bash>',
                 '</execute_browse>',
                 '</file_edit>',
             ]
-        response = self.llm.completion(**params)
 
-        if self.function_calling_active:
-            actions = codeact_function_calling.response_to_actions(response)
-            for action in actions:
-                self.pending_actions.append(action)
-            return self.pending_actions.popleft()
-        else:
-            return self.action_parser.parse(response)
+        # Log the messages being sent to LLM
+        logger.debug("Messages being sent to LLM:")
+        for msg in messages:
+            logger.debug(f"Role: {msg.role}, Content: {truncate_content(str(msg.content), 100)}")
+
+        try:
+            response = self.llm.completion(**params)
+            logger.debug(f"LLM Response: {response}")
+            
+            if self.function_calling_active:
+                actions = codeact_function_calling.response_to_actions(response)
+                for action in actions:
+                    self.pending_actions.append(action)
+                return self.pending_actions.popleft()
+            else:
+                return self.action_parser.parse(response)
+        except Exception as e:
+            logger.error(f"Error during execution: {str(e)}")
+            logger.debug(f"Full error details: {traceback.format_exc()}")
+            raise
 
     def _get_messages(self, state: State) -> list[Message]:
         """Constructs the message history for the LLM conversation.

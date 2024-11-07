@@ -150,7 +150,8 @@ class EventStreamRuntime(Runtime):
         self.config = config
         self._host_port = 30000  # initial dummy value
         self._container_port = 30001  # initial dummy value
-        self.api_url = f'{self.config.sandbox.local_runtime_url}:{self._container_port}'
+        self.api_url = f'{self.config.sandbox.local_runtime_url}:{
+            self._container_port}'
         self.session = requests.Session()
         self.status_callback = status_callback
 
@@ -159,7 +160,8 @@ class EventStreamRuntime(Runtime):
         self.runtime_container_image = self.config.sandbox.runtime_container_image
         self.container_name = self.container_name_prefix + sid
         self.container = None
-        self.action_semaphore = threading.Semaphore(1)  # Ensure one action at a time
+        self.action_semaphore = threading.Semaphore(
+            1)  # Ensure one action at a time
 
         self.runtime_builder = DockerRuntimeBuilder(self.docker_client)
 
@@ -169,7 +171,8 @@ class EventStreamRuntime(Runtime):
         if self.config.sandbox.runtime_extra_deps:
             self.log(
                 'debug',
-                f'Installing extra user-provided dependencies in the runtime image: {self.config.sandbox.runtime_extra_deps}',
+                f'Installing extra user-provided dependencies in the runtime image: {
+                    self.config.sandbox.runtime_extra_deps}',
             )
 
         self.skip_container_logs = (
@@ -204,7 +207,8 @@ class EventStreamRuntime(Runtime):
                 )
 
             self.log(
-                'info', f'Starting runtime with image: {self.runtime_container_image}'
+                'info', f'Starting runtime with image: {
+                    self.runtime_container_image}'
             )
             await call_sync_from_async(self._init_container)
             self.log('info', f'Container started: {self.container_name}')
@@ -213,7 +217,8 @@ class EventStreamRuntime(Runtime):
             await call_sync_from_async(self._attach_to_container)
 
         if not self.attach_to_existing:
-            self.log('info', f'Waiting for client to become ready at {self.api_url}...')
+            self.log('info', f'Waiting for client to become ready at {
+                     self.api_url}...')
         self.send_status_message('STATUS$WAITING_FOR_CLIENT')
         await call_sync_from_async(self._wait_until_alive)
         if not self.attach_to_existing:
@@ -224,7 +229,8 @@ class EventStreamRuntime(Runtime):
 
         self.log(
             'debug',
-            f'Container initialized with plugins: {[plugin.name for plugin in self.plugins]}',
+            f'Container initialized with plugins: {
+                [plugin.name for plugin in self.plugins]}',
         )
         self.send_status_message(' ')
 
@@ -252,7 +258,8 @@ class EventStreamRuntime(Runtime):
         self._container_port = (
             self._host_port
         )  # in future this might differ from host port
-        self.api_url = f'{self.config.sandbox.local_runtime_url}:{self._container_port}'
+        self.api_url = f'{self.config.sandbox.local_runtime_url}:{
+            self._container_port}'
 
         use_host_network = self.config.sandbox.use_host_network
         network_mode: str | None = 'host' if use_host_network else None
@@ -296,7 +303,8 @@ class EventStreamRuntime(Runtime):
             volumes = None
         self.log(
             'debug',
-            f'Sandbox workspace: {self.config.workspace_mount_path_in_sandbox}',
+            f'Sandbox workspace: {
+                self.config.workspace_mount_path_in_sandbox}',
         )
 
         if self.config.sandbox.browsergym_eval_env is not None:
@@ -312,7 +320,8 @@ class EventStreamRuntime(Runtime):
                 command=(
                     f'/openhands/micromamba/bin/micromamba run -n openhands '
                     f'poetry run '
-                    f'python -u -m openhands.runtime.action_execution_server {self._container_port} '
+                    f'python -u -m openhands.runtime.action_execution_server {
+                        self._container_port} '
                     f'--working-dir "{self.config.workspace_mount_path_in_sandbox}" '
                     f'{plugin_arg}'
                     f'--username {"openhands" if self.config.run_as_openhands else "root"} '
@@ -335,7 +344,8 @@ class EventStreamRuntime(Runtime):
             if '409' in str(e):
                 self.log(
                     'warning',
-                    f'Container {self.container_name} already exists. Removing...',
+                    f'Container {
+                        self.container_name} already exists. Removing...',
                 )
                 self._close_containers(rm_all_containers=True)
                 return self._init_container()
@@ -343,12 +353,14 @@ class EventStreamRuntime(Runtime):
             else:
                 self.log(
                     'error',
-                    f'Error: Instance {self.container_name} FAILED to start container!\n',
+                    f'Error: Instance {
+                        self.container_name} FAILED to start container!\n',
                 )
         except Exception as e:
             self.log(
                 'error',
-                f'Error: Instance {self.container_name} FAILED to start container!\n',
+                f'Error: Instance {
+                    self.container_name} FAILED to start container!\n',
             )
             self.log('error', str(e))
             self.close()
@@ -363,10 +375,12 @@ class EventStreamRuntime(Runtime):
             self._container_port = int(port.split('/')[0])
             break
         self._host_port = self._container_port
-        self.api_url = f'{self.config.sandbox.local_runtime_url}:{self._container_port}'
+        self.api_url = f'{self.config.sandbox.local_runtime_url}:{
+            self._container_port}'
         self.log(
             'debug',
-            f'attached to container: {self.container_name} {self._container_port} {self.api_url}',
+            f'attached to container: {self.container_name} {
+                self._container_port} {self.api_url}',
         )
 
     def _refresh_logs(self):
@@ -440,7 +454,8 @@ class EventStreamRuntime(Runtime):
                             logs = container.logs(tail=1000).decode('utf-8')
                             self.log(
                                 'debug',
-                                f'==== Container logs on close ====\n{logs}\n==== End of container logs ====',
+                                f'==== Container logs on close ====\n{
+                                    logs}\n==== End of container logs ====',
                             )
                         container.remove(force=True)
                 except docker.errors.APIError:
@@ -472,7 +487,8 @@ class EventStreamRuntime(Runtime):
                 raise ValueError(f'Action {action_type} does not exist.')
             if not hasattr(self, action_type):
                 return ErrorObservation(
-                    f'Action {action_type} is not supported in the current runtime.',
+                    f'Action {
+                        action_type} is not supported in the current runtime.',
                     error_id='AGENT_ERROR$BAD_ACTION',
                 )
             if (
@@ -501,7 +517,8 @@ class EventStreamRuntime(Runtime):
                 obs._cause = action.id  # type: ignore[attr-defined]
             except requests.Timeout:
                 raise RuntimeError(
-                    f'Runtime failed to return execute_action before the requested timeout of {action.timeout}s'
+                    f'Runtime failed to return execute_action before the requested timeout of {
+                        action.timeout}s'
                 )
             self._refresh_logs()
             return obs
@@ -557,7 +574,8 @@ class EventStreamRuntime(Runtime):
                 # For single file copy
                 upload_data = {'file': open(host_src, 'rb')}
 
-            params = {'destination': sandbox_dest, 'recursive': str(recursive).lower()}
+            params = {'destination': sandbox_dest,
+                      'recursive': str(recursive).lower()}
 
             send_request(
                 self.session,
@@ -576,7 +594,8 @@ class EventStreamRuntime(Runtime):
             if recursive:
                 os.unlink(temp_zip_path)
             self.log(
-                'debug', f'Copy completed: host:{host_src} -> runtime:{sandbox_dest}'
+                'debug', f'Copy completed: host:{
+                    host_src} -> runtime:{sandbox_dest}'
             )
             self._refresh_logs()
 

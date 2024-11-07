@@ -269,10 +269,13 @@ if __name__ == '__main__':
     if args.max_iterations is not None:
         config.max_iterations = args.max_iterations
 
-    asyncio.run(
-        run_controller(
-            config=config,
-            initial_user_action=initial_user_action,
-            sid=sid,
+    try:
+        asyncio.run(
+            run_controller(
+                config=config,
+                initial_user_action=initial_user_action,
+                sid=sid,
+            )
         )
-    )
+    except KeyboardInterrupt:
+        logger.info('Program has been stopped by user.')

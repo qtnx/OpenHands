@@ -18,7 +18,8 @@ class DockerRuntimeBuilder(RuntimeBuilder):
         version_info = self.docker_client.version()
         server_version = version_info.get('Version', '').replace('-', '.')
         if tuple(map(int, server_version.split('.')[:2])) < (18, 9):
-            raise RuntimeError('Docker server version must be >= 18.09 to use BuildKit')
+            raise RuntimeError(
+                'Docker server version must be >= 18.09 to use BuildKit')
 
         self.rolling_logger = RollingLogger(max_lines=10)
 
@@ -54,10 +55,12 @@ class DockerRuntimeBuilder(RuntimeBuilder):
         version_info = self.docker_client.version()
         server_version = version_info.get('Version', '').replace('-', '.')
         if tuple(map(int, server_version.split('.'))) < (18, 9):
-            raise RuntimeError('Docker server version must be >= 18.09 to use BuildKit')
+            raise RuntimeError(
+                'Docker server version must be >= 18.09 to use BuildKit')
 
         target_image_hash_name = tags[0]
-        target_image_repo, target_image_source_tag = target_image_hash_name.split(':')
+        target_image_repo, target_image_source_tag = target_image_hash_name.split(
+            ':')
         target_image_tag = tags[1].split(':')[1] if len(tags) > 1 else None
 
         buildx_cmd = [
@@ -66,7 +69,8 @@ class DockerRuntimeBuilder(RuntimeBuilder):
             'build',
             '--progress=plain',
             f'--build-arg=OPENHANDS_RUNTIME_VERSION={oh_version}',
-            f'--build-arg=OPENHANDS_RUNTIME_BUILD_TIME={datetime.datetime.now().isoformat()}',
+            f'--build-arg=OPENHANDS_RUNTIME_BUILD_TIME={
+                datetime.datetime.now().isoformat()}',
             f'--tag={target_image_hash_name}',
             '--load',
         ]
@@ -94,6 +98,8 @@ class DockerRuntimeBuilder(RuntimeBuilder):
         )
 
         try:
+            logger.info(f"Starting build process with command: {
+                        ' '.join(buildx_cmd)}")
             process = subprocess.Popen(
                 buildx_cmd,
                 stdout=subprocess.PIPE,
@@ -102,25 +108,39 @@ class DockerRuntimeBuilder(RuntimeBuilder):
                 bufsize=1,
             )
 
+            build_output = []
             if process.stdout:
                 for line in iter(process.stdout.readline, ''):
                     line = line.strip()
                     if line:
+                        build_output.append(line)
                         self._output_logs(line)
+                        logger.debug(f"Build output: {line}")
 
+            logger.info("Build process completed. Waiting for return code.")
             return_code = process.wait()
 
             if return_code != 0:
+                error_msg = '\n'.join(build_output)
+                logger.error(
+                    f"Build process failed with return code: {return_code}")
                 raise subprocess.CalledProcessError(
                     return_code,
                     process.args,
-                    output=process.stdout.read() if process.stdout else None,
-                    stderr=process.stderr.read() if process.stderr else None,
+                    output=error_msg,
+                    stderr=None
                 )
+            else:
+                logger.info("Build process completed successfully.")
 
         except subprocess.CalledProcessError as e:
-            logger.error(f'Image build failed:\n{e}')
+            logger.error(f'Image build failed with return code {e.returncode}')
+            logger.error(f'Command that failed: {e.cmd}')
             logger.error(f'Command output:\n{e.output}')
+            logger.error(f'Command stderr:\n{e.stderr}')
+            raise
+        except Exception as e:
+            logger.error(f'Unexpected error during image build: {str(e)}')
             raise
 
         except subprocess.TimeoutExpired:
@@ -133,12 +153,14 @@ class DockerRuntimeBuilder(RuntimeBuilder):
 
         except PermissionError as e:
             logger.error(
-                f'Permission denied when trying to execute the build command:\n{e}'
+                f'Permission denied when trying to execute the build command:\n{
+                    e}'
             )
             raise
 
         except Exception as e:
-            logger.error(f'An unexpected error occurred during the build process: {e}')
+            logger.error(
+                f'An unexpected error occurred during the build process: {e}')
             raise
 
         logger.info(f'Image [{target_image_hash_name}] build finished.')
@@ -147,7 +169,8 @@ class DockerRuntimeBuilder(RuntimeBuilder):
             image = self.docker_client.images.get(target_image_hash_name)
             image.tag(target_image_repo, target_image_tag)
             logger.info(
-                f'Re-tagged image [{target_image_hash_name}] with more generic tag [{target_image_tag}]'
+                f'Re-tagged image [{target_image_hash_name}] with more generic tag [{
+                    target_image_tag}]'
             )
 
         # Check if the image is built successfully
@@ -163,7 +186,8 @@ class DockerRuntimeBuilder(RuntimeBuilder):
             else target_image_source_tag
         )
         logger.info(
-            f'Image {target_image_repo} with tags [{tags_str}] built successfully'
+            f'Image {target_image_repo} with tags [{
+                tags_str}] built successfully'
         )
         return target_image_hash_name
 
@@ -206,7 +230,8 @@ class DockerRuntimeBuilder(RuntimeBuilder):
                 for line in self.docker_client.api.pull(
                     image_repo, tag=image_tag, stream=True, decode=True
                 ):
-                    self._output_build_progress(line, layers, previous_layer_count)
+                    self._output_build_progress(
+                        line, layers, previous_layer_count)
                     previous_layer_count = len(layers)
                 logger.debug('Image pulled')
                 return True
@@ -235,7 +260,8 @@ class DockerRuntimeBuilder(RuntimeBuilder):
         if 'id' in current_line and 'progressDetail' in current_line:
             layer_id = current_line['id']
             if layer_id not in layers:
-                layers[layer_id] = {'status': '', 'progress': '', 'last_logged': 0}
+                layers[layer_id] = {'status': '',
+                                    'progress': '', 'last_logged': 0}
 
             if 'status' in current_line:
                 layers[layer_id]['status'] = current_line['status']
@@ -275,10 +301,12 @@ class DockerRuntimeBuilder(RuntimeBuilder):
                             f'Layer {lid}: {progress} {status}'
                         )
             elif percentage != 0 and (
-                percentage - layers[layer_id]['last_logged'] >= 10 or percentage == 100
+                percentage -
+                    layers[layer_id]['last_logged'] >= 10 or percentage == 100
             ):
                 logger.debug(
-                    f'Layer {layer_id}: {layers[layer_id]["progress"]} {layers[layer_id]["status"]}'
+                    f'Layer {layer_id}: {layers[layer_id]["progress"]} {
+                        layers[layer_id]["status"]}'
                 )
 
             layers[layer_id]['last_logged'] = percentage
@@ -304,9 +332,11 @@ class DockerRuntimeBuilder(RuntimeBuilder):
                         file_age = current_time - os.path.getmtime(file_path)
                         if file_age > max_age_seconds:
                             os.remove(file_path)
-                            logger.debug(f'Removed old cache file: {file_path}')
+                            logger.debug(
+                                f'Removed old cache file: {file_path}')
                     except Exception as e:
-                        logger.warning(f'Error processing cache file {file_path}: {e}')
+                        logger.warning(f'Error processing cache file {
+                                       file_path}: {e}')
         except Exception as e:
             logger.warning(f'Error during build cache pruning: {e}')
 
@@ -325,12 +355,14 @@ class DockerRuntimeBuilder(RuntimeBuilder):
                 os.makedirs(cache_dir, exist_ok=True)
                 logger.debug(f'Created cache directory: {cache_dir}')
             except OSError as e:
-                logger.debug(f'Failed to create cache directory {cache_dir}: {e}')
+                logger.debug(f'Failed to create cache directory {
+                             cache_dir}: {e}')
                 return False
 
         if not os.access(cache_dir, os.W_OK):
             logger.warning(
-                f'Cache directory {cache_dir} is not writable. Caches will not be used for Docker builds.'
+                f'Cache directory {
+                    cache_dir} is not writable. Caches will not be used for Docker builds.'
             )
             return False
 

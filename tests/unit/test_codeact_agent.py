@@ -1,4 +1,4 @@
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -12,6 +12,16 @@ from openhands.events.observation.commands import (
 from openhands.events.observation.delegate import AgentDelegateObservation
 from openhands.events.observation.error import ErrorObservation
 from openhands.llm.llm import LLM
+from openhands.controller.state.state import State
+from openhands.events.action import MessageAction, AgentFinishAction
+
+
+@pytest.fixture
+def mock_state():
+    state = Mock(spec=State)
+    state.max_iterations = 10
+    state.iteration = 0
+    return state
 
 
 @pytest.fixture
@@ -106,3 +116,98 @@ def test_unknown_observation_message(agent: CodeActAgent):
 
     with pytest.raises(ValueError, match='Unknown observation type'):
         agent.get_observation_message(obs, tool_call_id_to_message={})
+
+
+def test_initial_plan_creation(agent, mock_state):
+    # Mock LLM response
+    mock_plan = "Test execution plan"
+    agent.llm.completion.return_value.choices = [Mock(message=Mock(content=mock_plan))]
+    
+    # Test initial plan creation
+    action = agent.step(mock_state)
+    
+    assert isinstance(action, MessageAction)
+    assert mock_plan in action.content
+    assert "approve" in action.content.lower()
+    assert "modify" in action.content.lower()
+    assert "reject" in action.content.lower()
+    assert action.wait_for_response is True
+    assert agent.waiting_for_feedback is True
+
+
+def test_plan_approval(agent, mock_state):
+    # Setup initial state
+    agent.plan = "Test plan"
+    agent.waiting_for_feedback = True
+    mock_state.get_last_user_message.return_value = "approve"
+    
+    # Test plan approval
+    action = agent.step(mock_state)
+    
+    assert isinstance(action, MessageAction)
+    assert "approved" in action.content.lower()
+    assert agent.plan_approved is True
+    assert agent.waiting_for_feedback is False
+
+
+def test_plan_rejection(agent, mock_state):
+    # Setup initial state
+    agent.plan = "Test plan"
+    agent.waiting_for_feedback = True
+    mock_state.get_last_user_message.return_value = "reject"
+    
+    # Test plan rejection
+    action = agent.step(mock_state)
+    
+    assert isinstance(action, AgentFinishAction)
+    assert agent.plan is None
+    assert agent.waiting_for_feedback is False
+
+
+def test_plan_modification(agent, mock_state):
+    # Setup initial state
+    agent.plan = "Test plan"
+    agent.waiting_for_feedback = True
+    mock_state.get_last_user_message.return_value = "modify make it more detailed"
+    
+    # Mock LLM response for new plan
+    mock_new_plan = "More detailed test plan"
+    agent.llm.completion.return_value.choices = [Mock(message=Mock(content=mock_new_plan))]
+    
+    # Test plan modification
+    action = agent.step(mock_state)
+    
+    assert isinstance(action, MessageAction)
+    assert mock_new_plan in action.content
+    assert "approve" in action.content.lower()
+    assert "modify" in action.content.lower()
+    assert agent.waiting_for_feedback is True
+    assert agent.plan == mock_new_plan
+
+
+def test_waiting_for_feedback(agent, mock_state):
+    # Setup initial state
+    agent.waiting_for_feedback = True
+    mock_state.get_last_user_message.return_value = None
+    
+    # Test waiting state
+    action = agent.step(mock_state)
+    
+    assert isinstance(action, MessageAction)
+    assert "waiting" in action.content.lower()
+    assert action.wait_for_response is True
+    assert agent.waiting_for_feedback is True
+
+
+def test_reset_agent(agent):
+    # Setup initial state
+    agent.plan = "Test plan"
+    agent.plan_approved = True
+    agent.waiting_for_feedback = True
+    
+    # Test reset
+    agent.reset()
+    
+    assert agent.plan is None
+    assert agent.plan_approved is False
+    assert agent.waiting_for_feedback is False
