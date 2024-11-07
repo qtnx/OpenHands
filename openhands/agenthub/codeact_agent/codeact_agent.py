@@ -1,8 +1,8 @@
 import json
 import os
+import traceback
 from collections import deque
 from itertools import islice
-import traceback
 
 from litellm import ModelResponse
 
@@ -333,8 +333,8 @@ class CodeActAgent(Agent):
                 self.waiting_for_feedback = False
                 return self._handle_plan_feedback(last_user_message, state)
             return MessageAction(
-                content="Waiting for your feedback on the plan...",
-                wait_for_response=True
+                content='Waiting for your feedback on the plan...',
+                wait_for_response=True,
             )
 
         # Create and get approval for plan if not done yet
@@ -342,7 +342,9 @@ class CodeActAgent(Agent):
             if not self.plan:
                 # Generate initial plan
                 plan_messages = self._get_messages(state)
-                prompt = text=f"""You are an AI task planner responsible for creating detailed execution plans for complex tasks that will be solved by multiple AI language models with varying capabilities. Your goal is to analyze the given task, create a comprehensive plan, and present it in a structured format.
+                prompt = (
+                    text
+                ) = f"""You are an AI task planner responsible for creating detailed execution plans for complex tasks that will be solved by multiple AI language models with varying capabilities. Your goal is to analyze the given task, create a comprehensive plan, and present it in a structured format.
 
 Please create a detailed execution plan for this task. Follow these steps:
 
@@ -356,7 +358,7 @@ Please create a detailed execution plan for this task. Follow these steps:
 4. Identify potential risks or considerations.
 5. Define expected outcomes at each step.
 
-Task ranking for model: 
+Task ranking for model:
 - Tier1 (Smartest): Required for complex architectural analysis, design pattern recognition, and high-level system relationships. Needs deep understanding of software engineering principles and ability to make sophisticated connections.
 - Tier2: Suitable for analyzing individual components, documenting functionality, and explaining code flow. Requires good comprehension of programming concepts but less architectural expertise.
 - Tier3 (Smallest, 2b-8b): Can handle basic code documentation, syntax explanation, simple function execution, summarize output. Suitable for line-by-line explanations and basic code structure documentation.
@@ -395,12 +397,11 @@ Define the expected outcomes at each main step:
 
 Please ensure that your plan is comprehensive, clear, and addresses all aspects of the task. Pay special attention to providing detailed substeps for each main action to be taken.
                                          """
-                print("Prompt: ", prompt)
-                plan_messages.append(Message(
-                    role='system',
-                    content=[TextContent(text=prompt)]
-                ))
-                
+                print('Prompt: ', prompt)
+                plan_messages.append(
+                    Message(role='system', content=[TextContent(text=prompt)])
+                )
+
                 plan_params = {
                     'messages': self.llm.format_messages_for_llm(plan_messages),
                 }
@@ -410,12 +411,12 @@ Please ensure that your plan is comprehensive, clear, and addresses all aspects 
                 # Ask user to review plan
                 self.waiting_for_feedback = True
                 return MessageAction(
-                    content=f"Here is my proposed execution plan:\n\n{self.plan}\n\n"
-                           f"Please review this plan and respond with:\n"
-                           f"- 'approve' to proceed with execution\n"
-                           f"- 'modify <suggestions>' to request changes to the plan\n"
-                           f"- 'reject' to cancel execution",
-                    wait_for_response=True
+                    content=f'Here is my proposed execution plan:\n\n{self.plan}\n\n'
+                    f'Please review this plan and respond with:\n'
+                    f"- 'approve' to proceed with execution\n"
+                    f"- 'modify <suggestions>' to request changes to the plan\n"
+                    f"- 'reject' to cancel execution",
+                    wait_for_response=True,
                 )
 
         # Proceed with normal execution once plan is approved
@@ -424,35 +425,39 @@ Please ensure that your plan is comprehensive, clear, and addresses all aspects 
     def _handle_plan_feedback(self, feedback: str, state: State) -> Action:
         """Handle user feedback on the execution plan"""
         feedback = feedback.lower().strip()
-        
-        if "approve" in feedback:
+
+        if 'approve' in feedback:
             self.plan_approved = True
             return MessageAction(
-                content="Plan approved. Proceeding with execution.",
-                wait_for_response=False
+                content='Plan approved. Proceeding with execution.',
+                wait_for_response=False,
             )
-        elif "reject" in feedback:
+        elif 'reject' in feedback:
             self.plan = None
-            return AgentFinishAction(
-                thought="Plan rejected. Ending execution."
-            )
+            return AgentFinishAction(thought='Plan rejected. Ending execution.')
         else:
             # Handle modification request
-            modification_request = feedback.replace("modify", "").strip()
+            modification_request = feedback.replace('modify', '').strip()
             self.plan = None
-            
+
             # Create new plan based on feedback
             plan_messages = self._get_messages(state)
-            plan_messages.append(Message(
-                role='user',
-                content=[TextContent(text=f"Based on the following feedback:\n{modification_request}\n\n"
-                                       "Please create a revised execution plan that outlines:\n"
-                                       "1. The overall approach to solving the task\n"
-                                       "2. Step-by-step breakdown of actions to be taken\n"
-                                       "3. Any potential risks or considerations\n"
-                                       "4. Expected outcomes at each step")]
-            ))
-            
+            plan_messages.append(
+                Message(
+                    role='user',
+                    content=[
+                        TextContent(
+                            text=f'Based on the following feedback:\n{modification_request}\n\n'
+                            'Please create a revised execution plan that outlines:\n'
+                            '1. The overall approach to solving the task\n'
+                            '2. Step-by-step breakdown of actions to be taken\n'
+                            '3. Any potential risks or considerations\n'
+                            '4. Expected outcomes at each step'
+                        )
+                    ],
+                )
+            )
+
             plan_params = {
                 'messages': self.llm.format_messages_for_llm(plan_messages),
             }
@@ -462,36 +467,40 @@ Please ensure that your plan is comprehensive, clear, and addresses all aspects 
             # Request approval for new plan
             self.waiting_for_feedback = True
             return MessageAction(
-                content=f"Here is my revised execution plan:\n\n{self.plan}\n\n"
-                       f"Please review this plan and respond with:\n"
-                       f"- 'approve' to proceed with execution\n"
-                       f"- 'modify <suggestions>' to request further changes\n"
-                       f"- 'reject' to cancel execution",
-                wait_for_response=True
+                content=f'Here is my revised execution plan:\n\n{self.plan}\n\n'
+                f'Please review this plan and respond with:\n'
+                f"- 'approve' to proceed with execution\n"
+                f"- 'modify <suggestions>' to request further changes\n"
+                f"- 'reject' to cancel execution",
+                wait_for_response=True,
             )
 
     def _execute_step(self, state: State) -> Action:
         """Execute a single step after plan is approved"""
-        logger.debug(f"Executing step with plan: {self.plan}")
+        logger.debug(f'Executing step with plan: {self.plan}')
         messages = self._get_messages(state)
-        
+
         # Add plan context to the messages
         plan_context = Message(
             role='user',
-            content=[TextContent(text=f"Following the approved plan:\n{self.plan}\n\nPlease execute the next step.")]
+            content=[
+                TextContent(
+                    text=f'Following the approved plan:\n{self.plan}\n\nPlease execute the next step.'
+                )
+            ],
         )
         messages.append(plan_context)
-        
+
         params: dict = {
             'messages': self.llm.format_messages_for_llm(messages),
         }
-        
+
         if self.function_calling_active:
-            logger.debug("Function calling is active, adding tools")
+            logger.debug('Function calling is active, adding tools')
             params['tools'] = self.tools
             params['parallel_tool_calls'] = False
         else:
-            logger.debug("Function calling not active, adding stop tokens")
+            logger.debug('Function calling not active, adding stop tokens')
             params['stop'] = [
                 '</execute_ipython>',
                 '</execute_bash>',
@@ -500,14 +509,16 @@ Please ensure that your plan is comprehensive, clear, and addresses all aspects 
             ]
 
         # Log the messages being sent to LLM
-        logger.debug("Messages being sent to LLM:")
+        logger.debug('Messages being sent to LLM:')
         for msg in messages:
-            logger.debug(f"Role: {msg.role}, Content: {truncate_content(str(msg.content), 100)}")
+            logger.debug(
+                f'Role: {msg.role}, Content: {truncate_content(str(msg.content), 100)}'
+            )
 
         try:
             response = self.llm.completion(**params)
-            logger.debug(f"LLM Response: {response}")
-            
+            logger.debug(f'LLM Response: {response}')
+
             if self.function_calling_active:
                 actions = codeact_function_calling.response_to_actions(response)
                 for action in actions:
@@ -516,8 +527,8 @@ Please ensure that your plan is comprehensive, clear, and addresses all aspects 
             else:
                 return self.action_parser.parse(response)
         except Exception as e:
-            logger.error(f"Error during execution: {str(e)}")
-            logger.debug(f"Full error details: {traceback.format_exc()}")
+            logger.error(f'Error during execution: {str(e)}')
+            logger.debug(f'Full error details: {traceback.format_exc()}')
             raise
 
     def _get_messages(self, state: State) -> list[Message]:

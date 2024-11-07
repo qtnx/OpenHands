@@ -160,8 +160,7 @@ class EventStreamRuntime(Runtime):
         self.runtime_container_image = self.config.sandbox.runtime_container_image
         self.container_name = self.container_name_prefix + sid
         self.container = None
-        self.action_semaphore = threading.Semaphore(
-            1)  # Ensure one action at a time
+        self.action_semaphore = threading.Semaphore(1)  # Ensure one action at a time
 
         self.runtime_builder = DockerRuntimeBuilder(self.docker_client)
 
@@ -207,8 +206,9 @@ class EventStreamRuntime(Runtime):
                 )
 
             self.log(
-                'info', f'Starting runtime with image: {
-                    self.runtime_container_image}'
+                'info',
+                f'Starting runtime with image: {
+                    self.runtime_container_image}',
             )
             await call_sync_from_async(self._init_container)
             self.log('info', f'Container started: {self.container_name}')
@@ -217,8 +217,11 @@ class EventStreamRuntime(Runtime):
             await call_sync_from_async(self._attach_to_container)
 
         if not self.attach_to_existing:
-            self.log('info', f'Waiting for client to become ready at {
-                     self.api_url}...')
+            self.log(
+                'info',
+                f'Waiting for client to become ready at {
+                     self.api_url}...',
+            )
         self.send_status_message('STATUS$WAITING_FOR_CLIENT')
         await call_sync_from_async(self._wait_until_alive)
         if not self.attach_to_existing:
@@ -574,8 +577,7 @@ class EventStreamRuntime(Runtime):
                 # For single file copy
                 upload_data = {'file': open(host_src, 'rb')}
 
-            params = {'destination': sandbox_dest,
-                      'recursive': str(recursive).lower()}
+            params = {'destination': sandbox_dest, 'recursive': str(recursive).lower()}
 
             send_request(
                 self.session,
@@ -594,8 +596,9 @@ class EventStreamRuntime(Runtime):
             if recursive:
                 os.unlink(temp_zip_path)
             self.log(
-                'debug', f'Copy completed: host:{
-                    host_src} -> runtime:{sandbox_dest}'
+                'debug',
+                f'Copy completed: host:{
+                    host_src} -> runtime:{sandbox_dest}',
             )
             self._refresh_logs()
 

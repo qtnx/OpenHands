@@ -18,8 +18,7 @@ class DockerRuntimeBuilder(RuntimeBuilder):
         version_info = self.docker_client.version()
         server_version = version_info.get('Version', '').replace('-', '.')
         if tuple(map(int, server_version.split('.')[:2])) < (18, 9):
-            raise RuntimeError(
-                'Docker server version must be >= 18.09 to use BuildKit')
+            raise RuntimeError('Docker server version must be >= 18.09 to use BuildKit')
 
         self.rolling_logger = RollingLogger(max_lines=10)
 
@@ -55,12 +54,10 @@ class DockerRuntimeBuilder(RuntimeBuilder):
         version_info = self.docker_client.version()
         server_version = version_info.get('Version', '').replace('-', '.')
         if tuple(map(int, server_version.split('.'))) < (18, 9):
-            raise RuntimeError(
-                'Docker server version must be >= 18.09 to use BuildKit')
+            raise RuntimeError('Docker server version must be >= 18.09 to use BuildKit')
 
         target_image_hash_name = tags[0]
-        target_image_repo, target_image_source_tag = target_image_hash_name.split(
-            ':')
+        target_image_repo, target_image_source_tag = target_image_hash_name.split(':')
         target_image_tag = tags[1].split(':')[1] if len(tags) > 1 else None
 
         buildx_cmd = [
@@ -115,23 +112,19 @@ class DockerRuntimeBuilder(RuntimeBuilder):
                     if line:
                         build_output.append(line)
                         self._output_logs(line)
-                        logger.debug(f"Build output: {line}")
+                        logger.debug(f'Build output: {line}')
 
-            logger.info("Build process completed. Waiting for return code.")
+            logger.info('Build process completed. Waiting for return code.')
             return_code = process.wait()
 
             if return_code != 0:
                 error_msg = '\n'.join(build_output)
-                logger.error(
-                    f"Build process failed with return code: {return_code}")
+                logger.error(f'Build process failed with return code: {return_code}')
                 raise subprocess.CalledProcessError(
-                    return_code,
-                    process.args,
-                    output=error_msg,
-                    stderr=None
+                    return_code, process.args, output=error_msg, stderr=None
                 )
             else:
-                logger.info("Build process completed successfully.")
+                logger.info('Build process completed successfully.')
 
         except subprocess.CalledProcessError as e:
             logger.error(f'Image build failed with return code {e.returncode}')
@@ -159,8 +152,7 @@ class DockerRuntimeBuilder(RuntimeBuilder):
             raise
 
         except Exception as e:
-            logger.error(
-                f'An unexpected error occurred during the build process: {e}')
+            logger.error(f'An unexpected error occurred during the build process: {e}')
             raise
 
         logger.info(f'Image [{target_image_hash_name}] build finished.')
@@ -230,8 +222,7 @@ class DockerRuntimeBuilder(RuntimeBuilder):
                 for line in self.docker_client.api.pull(
                     image_repo, tag=image_tag, stream=True, decode=True
                 ):
-                    self._output_build_progress(
-                        line, layers, previous_layer_count)
+                    self._output_build_progress(line, layers, previous_layer_count)
                     previous_layer_count = len(layers)
                 logger.debug('Image pulled')
                 return True
@@ -260,8 +251,7 @@ class DockerRuntimeBuilder(RuntimeBuilder):
         if 'id' in current_line and 'progressDetail' in current_line:
             layer_id = current_line['id']
             if layer_id not in layers:
-                layers[layer_id] = {'status': '',
-                                    'progress': '', 'last_logged': 0}
+                layers[layer_id] = {'status': '', 'progress': '', 'last_logged': 0}
 
             if 'status' in current_line:
                 layers[layer_id]['status'] = current_line['status']
@@ -301,8 +291,7 @@ class DockerRuntimeBuilder(RuntimeBuilder):
                             f'Layer {lid}: {progress} {status}'
                         )
             elif percentage != 0 and (
-                percentage -
-                    layers[layer_id]['last_logged'] >= 10 or percentage == 100
+                percentage - layers[layer_id]['last_logged'] >= 10 or percentage == 100
             ):
                 logger.debug(
                     f'Layer {layer_id}: {layers[layer_id]["progress"]} {
@@ -332,8 +321,7 @@ class DockerRuntimeBuilder(RuntimeBuilder):
                         file_age = current_time - os.path.getmtime(file_path)
                         if file_age > max_age_seconds:
                             os.remove(file_path)
-                            logger.debug(
-                                f'Removed old cache file: {file_path}')
+                            logger.debug(f'Removed old cache file: {file_path}')
                     except Exception as e:
                         logger.warning(f'Error processing cache file {
                                        file_path}: {e}')

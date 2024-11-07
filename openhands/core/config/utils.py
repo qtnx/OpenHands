@@ -119,39 +119,63 @@ def load_from_toml(cfg: AppConfig, toml_file: str = 'config.toml'):
             try:
                 if key is not None and key.lower() == 'agent':
                     logger.openhands_logger.debug(
-                        'Attempt to load default agent config from config toml')
+                        'Attempt to load default agent config from config toml'
+                    )
                     non_dict_fields = {
-                        k: v for k, v in value.items() if not isinstance(v, dict)}
-                    non_dict_fields = {k: os.environ.get(v[2:-1], v) if isinstance(v, str) and v.startswith(
-                        '${') and v.endswith('}') else v for k, v in non_dict_fields.items()}
+                        k: v for k, v in value.items() if not isinstance(v, dict)
+                    }
+                    non_dict_fields = {
+                        k: os.environ.get(v[2:-1], v)
+                        if isinstance(v, str) and v.startswith('${') and v.endswith('}')
+                        else v
+                        for k, v in non_dict_fields.items()
+                    }
                     agent_config = AgentConfig(**non_dict_fields)
                     cfg.set_agent_config(agent_config, 'agent')
                     for nested_key, nested_value in value.items():
                         if isinstance(nested_value, dict):
                             logger.openhands_logger.debug(f'Attempt to load group {
                                                           nested_key} from config toml as agent config')
-                            nested_value = {k: os.environ.get(v[2:-1], v) if isinstance(v, str) and v.startswith(
-                                '${') and v.endswith('}') else v for k, v in nested_value.items()}
+                            nested_value = {
+                                k: os.environ.get(v[2:-1], v)
+                                if isinstance(v, str)
+                                and v.startswith('${')
+                                and v.endswith('}')
+                                else v
+                                for k, v in nested_value.items()
+                            }
                             agent_config = AgentConfig(**nested_value)
                             cfg.set_agent_config(agent_config, nested_key)
                 elif key is not None and key.lower() == 'llm':
                     logger.openhands_logger.debug(
-                        'Attempt to load default LLM config from config toml')
-                    value = {k: os.environ.get(v[2:-1], v) if isinstance(v, str) and v.startswith(
-                        '${') and v.endswith('}') else v for k, v in value.items()}
+                        'Attempt to load default LLM config from config toml'
+                    )
+                    value = {
+                        k: os.environ.get(v[2:-1], v)
+                        if isinstance(v, str) and v.startswith('${') and v.endswith('}')
+                        else v
+                        for k, v in value.items()
+                    }
                     llm_config = LLMConfig.from_dict(value)
                     cfg.set_llm_config(llm_config, 'llm')
                     for nested_key, nested_value in value.items():
                         if isinstance(nested_value, dict):
                             logger.openhands_logger.debug(f'Attempt to load group {
                                                           nested_key} from config toml as llm config')
-                            nested_value = {k: os.environ.get(v[2:-1], v) if isinstance(v, str) and v.startswith(
-                                '${') and v.endswith('}') else v for k, v in nested_value.items()}
+                            nested_value = {
+                                k: os.environ.get(v[2:-1], v)
+                                if isinstance(v, str)
+                                and v.startswith('${')
+                                and v.endswith('}')
+                                else v
+                                for k, v in nested_value.items()
+                            }
                             llm_config = LLMConfig.from_dict(nested_value)
                             cfg.set_llm_config(llm_config, nested_key)
                 elif not key.startswith('sandbox') and key.lower() != 'core':
                     logger.openhands_logger.warning(
-                        f'Unknown key in {toml_file}: "{key}"')
+                        f'Unknown key in {toml_file}: "{key}"'
+                    )
             except (TypeError, KeyError) as e:
                 logger.openhands_logger.warning(
                     f'Cannot parse config from toml, toml values have not been applied.\n Error: {
@@ -159,23 +183,20 @@ def load_from_toml(cfg: AppConfig, toml_file: str = 'config.toml'):
                     exc_info=False,
                 )
         else:
-            logger.openhands_logger.warning(
-                f'Unknown key in {toml_file}: "{key}"')
+            logger.openhands_logger.warning(f'Unknown key in {toml_file}: "{key}"')
     try:
         # set sandbox config from the toml file
         sandbox_config = cfg.sandbox
 
         # migrate old sandbox configs from [core] section to sandbox config
-        keys_to_migrate = [
-            key for key in core_config if key.startswith('sandbox_')]
+        keys_to_migrate = [key for key in core_config if key.startswith('sandbox_')]
         for key in keys_to_migrate:
             new_key = key.replace('sandbox_', '')
             if new_key in sandbox_config.__annotations__:
                 # read the key in sandbox and remove it from core
                 setattr(sandbox_config, new_key, core_config.pop(key))
             else:
-                logger.openhands_logger.warning(
-                    f'Unknown sandbox config: {key}')
+                logger.openhands_logger.warning(f'Unknown sandbox config: {key}')
 
         # the new style values override the old style values
         if 'sandbox' in toml_config:
@@ -187,8 +208,7 @@ def load_from_toml(cfg: AppConfig, toml_file: str = 'config.toml'):
             if hasattr(cfg, key):
                 setattr(cfg, key, value)
             else:
-                logger.openhands_logger.warning(
-                    f'Unknown core config key: {key}')
+                logger.openhands_logger.warning(f'Unknown core config key: {key}')
     except (TypeError, KeyError) as e:
         logger.openhands_logger.warning(
             f'Cannot parse config from toml, toml values have not been applied.\nError: {
@@ -211,8 +231,7 @@ def finalize_config(cfg: AppConfig):
 
     # make sure log_completions_folder is an absolute path
     for llm in cfg.llms.values():
-        llm.log_completions_folder = os.path.abspath(
-            llm.log_completions_folder)
+        llm.log_completions_folder = os.path.abspath(llm.log_completions_folder)
         if llm.embedding_base_url is None:
             llm.embedding_base_url = llm.base_url
 
@@ -280,16 +299,14 @@ def get_llm_config_arg(
     # update the llm config with the specified section
     if 'llm' in toml_config and llm_config_arg in toml_config['llm']:
         return LLMConfig.from_dict(toml_config['llm'][llm_config_arg])
-    logger.openhands_logger.debug(
-        f'Loading from toml failed for {llm_config_arg}')
+    logger.openhands_logger.debug(f'Loading from toml failed for {llm_config_arg}')
     return None
 
 
 # Command line arguments
 def get_parser() -> argparse.ArgumentParser:
     """Get the parser for the command line arguments."""
-    parser = argparse.ArgumentParser(
-        description='Run an agent with a specific task')
+    parser = argparse.ArgumentParser(description='Run an agent with a specific task')
     parser.add_argument(
         '--config-file',
         type=str,

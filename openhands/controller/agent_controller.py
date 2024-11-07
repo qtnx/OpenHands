@@ -5,6 +5,7 @@ from typing import Callable, ClassVar, Type
 
 import litellm
 
+from openhands.agenthub.planning_agent.planning_agent import PlanningAgent
 from openhands.controller.agent import Agent
 from openhands.controller.state.state import State, TrafficControlState
 from openhands.controller.stuck import StuckDetector
@@ -42,7 +43,6 @@ from openhands.events.observation import (
 from openhands.events.serialization.event import truncate_content
 from openhands.llm.llm import LLM
 from openhands.runtime.utils.shutdown_listener import should_continue
-from openhands.agenthub.planning_agent.planning_agent import PlanningAgent
 
 # note: RESUME is only available on web GUI
 TRAFFIC_CONTROL_REMINDER = (
@@ -751,7 +751,9 @@ class AgentController:
             # Thực hiện logic lập kế hoạch trước khi chạy
             await self.set_agent_state_to(AgentState.RUNNING)
             while should_continue() and not self.agent.complete:
-                action = await asyncio.get_event_loop().run_in_executor(None, self.agent.step, self.state)
+                action = await asyncio.get_event_loop().run_in_executor(
+                    None, self.agent.step, self.state
+                )
                 self._pending_action = action
                 await self.process_action(action)
                 if self.state.root_task.state in ['completed', 'abandoned']:

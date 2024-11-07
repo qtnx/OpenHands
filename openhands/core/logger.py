@@ -4,8 +4,8 @@ import re
 import sys
 import traceback
 from datetime import datetime
-from typing import Literal, Mapping
 from logging.handlers import RotatingFileHandler
+from typing import Literal, Mapping
 
 from termcolor import colored
 
@@ -325,11 +325,15 @@ llm_prompt_logger = _setup_llm_logger('prompt', current_log_level)
 llm_response_logger = _setup_llm_logger('response', current_log_level)
 
 # Create logs directory if it doesn't exist
-logs_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'logs')
+logs_dir = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'logs'
+)
 os.makedirs(logs_dir, exist_ok=True)
 
 # Create formatter
-formatter = logging.Formatter('%(asctime)s - %(name)s:%(levelname)s: %(filename)s:%(lineno)d - %(message)s')
+formatter = logging.Formatter(
+    '%(asctime)s - %(name)s:%(levelname)s: %(filename)s:%(lineno)d - %(message)s'
+)
 
 # Create console handler
 console_handler = logging.StreamHandler(sys.stdout)
@@ -337,12 +341,14 @@ console_handler.setFormatter(formatter)
 
 # Create file handler
 log_file = os.path.join(logs_dir, f'openhands_{datetime.now().strftime("%Y%m%d")}.log')
-file_handler = RotatingFileHandler(log_file, maxBytes=10*1024*1024, backupCount=5)
+file_handler = RotatingFileHandler(log_file, maxBytes=10 * 1024 * 1024, backupCount=5)
 file_handler.setFormatter(formatter)
 
 # Configure root logger
 openhands_logger = logging.getLogger('openhands')
-openhands_logger.setLevel(logging.DEBUG if os.getenv('OPENHANDS_DEBUG') else logging.INFO)
+openhands_logger.setLevel(
+    logging.DEBUG if os.getenv('OPENHANDS_DEBUG') else logging.INFO
+)
 openhands_logger.addHandler(console_handler)
 openhands_logger.addHandler(file_handler)
 
