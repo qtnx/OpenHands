@@ -23,3 +23,23 @@ class MessageAction(Action):
             for url in self.images_urls:
                 ret += f'\nIMAGE_URL: {url}'
         return ret
+
+
+class CodeResponseAction(Action):
+    """Action containing response to a code query."""
+
+    def __init__(self, response: str):
+        self.response = response
+
+
+class ErrorAction(Action):
+    """Action indicating an error occurred."""
+
+    def __init__(self, error: str):
+        self.error = error
+
+
+class NoOpAction(Action):
+    """Action indicating no operation needed."""
+
+    pass

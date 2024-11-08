@@ -1,0 +1,3 @@
+/add tests/unit/test_code_indexer_agent.py
+/add openhands/agenthub/code_indexer_agent/code_indexer_agent.py
+/add openhands/agenthub/code_indexer_agent/ts-query/*

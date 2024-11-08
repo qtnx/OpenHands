@@ -1,5 +1,10 @@
 from openhands.events.observation.agent import AgentStateChangedObservation
 from openhands.events.observation.browse import BrowserOutputObservation
+from openhands.events.observation.code import (
+    CodeQueryObservation,
+    CommandOutputObservation,
+    FileContentObservation,
+)
 from openhands.events.observation.commands import (
     CmdOutputObservation,
     IPythonRunCellObservation,
@@ -30,4 +35,7 @@ __all__ = [
     'AgentDelegateObservation',
     'SuccessObservation',
     'UserRejectObservation',
+    'CodeQueryObservation',
+    'CommandOutputObservation',
+    'FileContentObservation',
 ]
