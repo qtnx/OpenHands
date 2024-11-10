@@ -21,6 +21,7 @@ from openhands.events.action import (
     FileWriteAction,
     IPythonRunCellAction,
 )
+from openhands.events.action.indexer import CodeIndexerAction
 from openhands.events.event import Event
 from openhands.events.observation import (
     CmdOutputObservation,
@@ -173,9 +174,13 @@ class Runtime(FileEditRuntimeMixin):
                     e, RuntimeDisconnectedError
                 ):
                     err_id = 'STATUS$ERROR_RUNTIME_DISCONNECTED'
-                self.log('error', f'Unexpected error while running action {e}')
+                self.log('error', f'Unexpected error while running action: {e}')
+                self.log('error', f'Error type: {type(e).__name__}')
+                self.log('error', f'Error details: {str(e)}')
                 self.log('error', f'Problematic action: {str(event)}')
-                self.send_error_message(err_id, str(e))
+                self.log('error', f'Action type: {type(event).__name__}')
+                self.log('error', f'Action details: {event.__dict__}')
+                self.send_error_message(err_id, f'{type(e).__name__}: {str(e)}')
                 self.close()
                 return
 
@@ -256,6 +261,10 @@ class Runtime(FileEditRuntimeMixin):
 
     @abstractmethod
     def browse_interactive(self, action: BrowseInteractiveAction) -> Observation:
+        pass
+
+    @abstractmethod
+    def code_indexer(self, action: CodeIndexerAction) -> Observation:
         pass
 
     # ====================================================================

@@ -23,6 +23,7 @@ from openhands.events.action.message import (
     NoOpAction,
 )
 from openhands.events.action.tasks import AddTaskAction, ModifyTaskAction
+from openhands.events.action.indexer import CodeIndexerAction
 
 
 # TODO: edit me
@@ -64,4 +65,5 @@ __all__ = [
     'NoOpAction',
     'BashCommandAction',
     'MultiAction',
+    'CodeIndexerAction'
 ]

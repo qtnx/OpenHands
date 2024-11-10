@@ -753,23 +753,3 @@ class AgentController:
             f'state={self.state!r}, agent_task={self.agent_task!r}, '
             f'delegate={self.delegate!r}, _pending_action={self._pending_action!r})'
         )
-
-    async def run(self):
-        # ... code hiện có ...
-
-        # Thay vì khởi chạy agent thông thường, chúng ta kiểm tra loại agent
-        if isinstance(self.agent, PlanningAgent):
-            # Thực hiện logic lập kế hoạch trước khi chạy
-            await self.set_agent_state_to(AgentState.RUNNING)
-            while should_continue() and not self.agent.complete:
-                action = await asyncio.get_event_loop().run_in_executor(
-                    None, self.agent.step, self.state
-                )
-                self._pending_action = action
-                await self.process_action(action)
-                if self.state.root_task.state in ['completed', 'abandoned']:
-                    break
-        else:
-            # ... logic thực thi hiện có ...
-            # Không thay đổi phần này nếu không cần thiết
-            pass

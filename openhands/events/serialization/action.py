@@ -19,6 +19,7 @@ from openhands.events.action.files import (
 )
 from openhands.events.action.message import MessageAction
 from openhands.events.action.tasks import AddTaskAction, ModifyTaskAction
+from openhands.events.action.indexer import CodeIndexerAction
 
 actions = (
     NullAction,
@@ -36,6 +37,7 @@ actions = (
     ModifyTaskAction,
     ChangeAgentStateAction,
     MessageAction,
+    CodeIndexerAction,
 )
 
 ACTION_TYPE_TO_CLASS = {action_class.action: action_class for action_class in actions}  # type: ignore[attr-defined]

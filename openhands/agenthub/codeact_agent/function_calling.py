@@ -23,6 +23,7 @@ from openhands.events.action import (
     IPythonRunCellAction,
     MessageAction,
 )
+from openhands.events.action.indexer import CodeIndexerAction
 from openhands.events.tool import ToolCallMetadata
 
 SYSTEM_PROMPT = """You are OpenHands agent, a helpful AI assistant that can interact with a computer to solve tasks.
@@ -494,6 +495,12 @@ def response_to_actions(response: ModelResponse) -> list[Action]:
                 action = IPythonRunCellAction(code=code, include_extra=False)
             elif tool_call.function.name == 'browser':
                 action = BrowseInteractiveAction(browser_actions=arguments['code'])
+            elif tool_call.function.name == 'explore_codebase':
+                logger.debug(f'TOOL CALL: explore_codebase -> CodeIndexerAction with arguments: {arguments}')
+                action = CodeIndexerAction(
+                    query=arguments['query'],
+                    codebase_path=arguments.get('codebase_path', '.')
+                )
             else:
                 raise RuntimeError(f'Unknown tool call: {tool_call.function.name}')
 
@@ -518,10 +525,11 @@ def response_to_actions(response: ModelResponse) -> list[Action]:
 
 
 def get_tools(
-    codeact_enable_browsing: bool = False,
-    codeact_enable_llm_editor: bool = False,
-    codeact_enable_jupyter: bool = False,
-) -> list[ChatCompletionToolParam]:
+    codeact_enable_browsing: bool = True,
+    codeact_enable_jupyter: bool = True,
+    codeact_enable_llm_editor: bool = True,
+) -> list[dict]:
+    """Get the list of available tools."""
     tools = [CmdRunTool, FinishTool]
     if codeact_enable_browsing:
         tools.append(BrowserTool)
@@ -531,4 +539,31 @@ def get_tools(
         tools.append(LLMBasedFileEditTool)
     else:
         tools.append(StrReplaceEditorTool)
+
+    # Add code indexing tools
+    tools.extend([
+        {
+            "type": "function",
+            "function": {
+                "name": "explore_codebase",
+                "description": "Search and analyze code in the codebase to understand its structure and functionality",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "The search query or question about the codebase"
+                        },
+                        "codebase_path": {
+                            "type": "string",
+                            "description": "Path to the codebase directory to analyze. Defaults to current directory",
+                            "default": "."
+                        }
+                    },
+                    "required": ["query"]
+                }
+            }
+        }
+    ])
+
     return tools

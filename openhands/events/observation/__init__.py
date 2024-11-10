@@ -20,6 +20,7 @@ from openhands.events.observation.files import (
 from openhands.events.observation.observation import Observation
 from openhands.events.observation.reject import UserRejectObservation
 from openhands.events.observation.success import SuccessObservation
+from openhands.events.observation.code import CodeQueryObservationRes
 
 __all__ = [
     'Observation',
@@ -38,4 +39,5 @@ __all__ = [
     'CodeQueryObservation',
     'CommandOutputObservation',
     'FileContentObservation',
+    'CodeQueryObservationRes',
 ]

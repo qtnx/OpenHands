@@ -1,21 +1,24 @@
 from abc import abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Dict, Any
 
 from openhands.events.action import Action
 from openhands.events.observation import Observation
 
 
 class Plugin:
-    """Base class for a plugin.
-
-    This will be initialized by the runtime client, which will run inside docker.
-    """
-
+    """Base class for plugins."""
     name: str
 
-    @abstractmethod
-    async def initialize(self, username: str):
+    """Plugin-specific configuration."""
+    config: Dict[str, Any] = field(default_factory=dict)
+
+    async def initialize(self, username: str) -> None:
         """Initialize the plugin."""
+        pass
+
+    def cleanup(self) -> None:
+        """Clean up plugin resources."""
         pass
 
     @abstractmethod

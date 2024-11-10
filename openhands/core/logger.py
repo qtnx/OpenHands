@@ -347,7 +347,7 @@ file_handler.setFormatter(formatter)
 # Configure root logger
 openhands_logger = logging.getLogger('openhands')
 openhands_logger.setLevel(
-    logging.DEBUG if os.getenv('OPENHANDS_DEBUG') else logging.INFO
+    logging.DEBUG if os.getenv('OPENHANDS_DEBUG') else logging.DEBUG
 )
 openhands_logger.addHandler(console_handler)
 openhands_logger.addHandler(file_handler)
