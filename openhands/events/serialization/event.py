@@ -116,8 +116,9 @@ def event_to_memory(event: 'Event', max_message_chars: int) -> dict:
     return d
 
 
-def truncate_content(content: str, max_chars: int) -> str:
+def truncate_content(content: str, max_chars: int = -1) -> str:
     """Truncate the middle of the observation content if it is too long."""
+    return content
     if len(content) <= max_chars or max_chars == -1:
         return content
 

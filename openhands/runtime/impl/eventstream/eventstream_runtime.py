@@ -25,6 +25,7 @@ from openhands.events.action import (
     IPythonRunCellAction,
 )
 from openhands.events.action.action import Action
+from openhands.events.action.indexer import CodeIndexerAction
 from openhands.events.observation import (
     ErrorObservation,
     NullObservation,
@@ -543,6 +544,9 @@ class EventStreamRuntime(Runtime):
         return self.run_action(action)
 
     def browse_interactive(self, action: BrowseInteractiveAction) -> Observation:
+        return self.run_action(action)
+
+    def code_indexer(self, action: CodeIndexerAction) -> Observation:
         return self.run_action(action)
 
     # ====================================================================

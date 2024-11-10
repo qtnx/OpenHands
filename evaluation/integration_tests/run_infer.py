@@ -157,6 +157,8 @@ def load_integration_tests() -> pd.DataFrame:
         if f.startswith('t') and f.endswith('.py')
     ]
     df = pd.DataFrame(test_files, columns=['file_path'])
+    # Extract instance_id from file path by getting the base filename without .py extension
+    # e.g. /path/to/t01_test.py -> t01_test
     df['instance_id'] = df['file_path'].apply(
         lambda x: os.path.basename(x).rstrip('.py')
     )
@@ -189,13 +191,16 @@ if __name__ == '__main__':
     if args.eval_ids:
         eval_ids = str(args.eval_ids).split(',')
         logger.info(f'\nUsing specific dataset IDs: {eval_ids}\n')
+    instances = integration_tests[integration_tests['instance_id'].str.startswith('t07')]
 
-    instances = prepare_dataset(
-        integration_tests,
-        output_file,
-        args.eval_n_limit,
-        eval_ids=eval_ids,
-    )
+    print(f'INTEGRATION TESTS: {integration_tests}')
+    # instances = prepare_dataset(
+    #     integration_tests,
+    #     output_file,
+    #     args.eval_n_limit,
+    #     eval_ids=eval_ids,
+    # )
+    print(f'INSTANCES: {instances}')
 
     run_evaluation(
         instances,

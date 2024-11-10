@@ -110,6 +110,7 @@ def codeact_user_response(
         'If you think you have solved the task, please first send your answer to user through message and then finish the interaction.\n'
         f'{encaps_str}'
         'IMPORTANT: YOU SHOULD NEVER ASK FOR HUMAN HELP.\n'
+        'If you want to approve the content, just reply with "approve"'
     )
 
     if state.history:
@@ -221,8 +222,15 @@ def prepare_dataset(
         )
 
     if eval_ids:
-        eval_ids_converted = [dataset[id_column].dtype.type(id) for id in eval_ids]
+        # Convert eval_ids to match dataset id_column dtype while preserving leading zeros
+        eval_ids_converted = []
+        for id in eval_ids:
+            # Handle both cases: 't07' should match 't07_code_analysis' etc
+            matching_ids = [x for x in dataset[id_column].values if x.startswith(id)]
+            eval_ids_converted.extend(matching_ids)
+
         dataset = dataset[dataset[id_column].isin(eval_ids_converted)]
+        logger.debug(f'DATASET AFTER FILTER: {dataset}')
         logger.info(f'Limiting evaluation to {len(eval_ids)} specific instances.')
     elif skip_num and skip_num >= 0:
         skip_num = min(skip_num, len(dataset))

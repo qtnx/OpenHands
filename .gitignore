@@ -232,3 +232,5 @@ containers/runtime/code
 .aider*
 
 .chromadb/
+
+runtime.config.toml

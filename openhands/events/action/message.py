@@ -17,7 +17,8 @@ class MessageAction(Action):
         return self.content
 
     def __str__(self) -> str:
-        ret = f'**MessageAction** (source={self.source})\n'
+        ret = f'**MessageAction** (source={self.source}) (cause={
+            self.cause})\n'
         ret += f'CONTENT: {self.content}'
         if self.images_urls:
             for url in self.images_urls:

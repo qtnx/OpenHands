@@ -13,10 +13,11 @@ from langchain_community.vectorstores import Chroma
 from langchain_core.output_parsers import StrOutputParser
 from tree_sitter import Parser
 from tree_sitter_languages import get_language, get_parser
+from openhands.runtime.base import logger
+import subprocess
 
-from openhands.controller.agent import Agent
 from openhands.events.action import CodeResponseAction, ErrorAction, NoOpAction
-from openhands.events.action.action import Action
+# from openhands.events.action.action import Action
 from openhands.events.observation import (
     CodeQueryObservation,
     CommandOutputObservation,
@@ -24,8 +25,14 @@ from openhands.events.observation import (
     FileContentObservation,
 )
 
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
+import threading
+import time
 
-class CodeIndexerAgent(Agent):
+
+class CodeIndexerAgent():
+    VERSION = '1.0'
     """Agent for indexing and retrieving code documentation using RAG."""
 
     # Common file patterns to index across different project types
@@ -168,17 +175,22 @@ class CodeIndexerAgent(Agent):
         '**/credentials/**',
     }
 
-    def __init__(self, config: Dict[str, Any], codebase_path: str = '.', **kwargs):
+    def __init__(self, config: Dict[str, Any], codebase_path: str = '/workspace', **kwargs):
         """Initialize the agent with config and optional kwargs."""
-        super().__init__(
-            config=config, llm=kwargs.get('llm', ChatOpenAI(temperature=0))
-        )
+        # super().__init__(
+        #     config=config, llm=kwargs.get('llm', ChatOpenAI(temperature=0))
+        # )
+        openai_api_key = config.get('openai_api_key')
         self.codebase_path = codebase_path
-        self.embeddings = kwargs.get('embeddings', OpenAIEmbeddings())
-        self.llm = kwargs.get('llm', ChatOpenAI(temperature=0))
+        self.embeddings = kwargs.get('embeddings', OpenAIEmbeddings(api_key=openai_api_key))
+        self.llm = kwargs.get('llm', ChatOpenAI(temperature=0, api_key=openai_api_key))
         self.vector_store = None
         self.parsers = self._initialize_parsers()
         self.initialize_rag()
+        
+        # Start file watcher if auto_watch is enabled
+        if kwargs.get('auto_watch', True):
+            self.start_file_watcher()
 
     def _initialize_parsers(self) -> Dict[str, Parser]:
         """Initialize tree-sitter parsers for supported languages."""
@@ -227,7 +239,7 @@ class CodeIndexerAgent(Agent):
                     if isinstance(node, ast.ClassDef):
                         # Get the source lines for the class
                         class_lines = content.splitlines()[
-                            node.lineno - 1 : node.end_lineno
+                            node.lineno - 1: node.end_lineno
                         ]
                         class_source = '\n'.join(class_lines)
 
@@ -248,7 +260,7 @@ class CodeIndexerAgent(Agent):
                         for item in node.body:
                             if isinstance(item, ast.FunctionDef):
                                 method_lines = content.splitlines()[
-                                    item.lineno - 1 : item.end_lineno
+                                    item.lineno - 1: item.end_lineno
                                 ]
                                 method_source = '\n'.join(method_lines)
                                 documents.append(
@@ -270,7 +282,7 @@ class CodeIndexerAgent(Agent):
                     ):
                         # Only process top-level functions
                         func_lines = content.splitlines()[
-                            node.lineno - 1 : node.end_lineno
+                            node.lineno - 1: node.end_lineno
                         ]
                         func_source = '\n'.join(func_lines)
                         documents.append(
@@ -364,6 +376,17 @@ class CodeIndexerAgent(Agent):
         exclude_patterns = set(self.EXCLUDE_PATTERNS)
         exclude_patterns.update(self._get_gitignore_patterns())
 
+        logger.debug(f"CodeIndexerAgent: Initializing RAG with codebase path: {self.codebase_path}")
+        
+        # Log the contents of the codebase directory
+        try:
+            logger.debug(f"CodeIndexerAgent: Listing contents of {self.codebase_path}")
+            result = subprocess.run(['ls', '-la', self.codebase_path], capture_output=True, text=True)
+            logger.debug(f"Directory contents:\n{result.stdout}")
+        except Exception as e:
+            logger.error(f"Error listing directory contents: {e}")
+
+
         documents = []
         # Walk through the codebase and parse files
         for root, _, files in os.walk(self.codebase_path):
@@ -382,7 +405,8 @@ class CodeIndexerAgent(Agent):
 
                     if ext == '.py':
                         # Use our basic Python parser
-                        parsed_docs = self._parse_code_structure(file_path, content)
+                        parsed_docs = self._parse_code_structure(
+                            file_path, content)
                     else:
                         # For non-Python files, create a simple document
                         parsed_docs = [
@@ -438,7 +462,8 @@ class CodeIndexerAgent(Agent):
 
             # Create new document with filtered metadata
             filtered_splits.append(
-                Document(page_content=doc.page_content, metadata=filtered_metadata)
+                Document(page_content=doc.page_content,
+                         metadata=filtered_metadata)
             )
 
         # Create vector store using filtered documents
@@ -545,7 +570,8 @@ class CodeIndexerAgent(Agent):
 
             # Format context from documents
             context = '\n\n'.join(
-                f"[{doc.metadata.get('type', 'unknown')}] {doc.metadata.get('source', 'unknown')}"
+                f"[{doc.metadata.get('type', 'unknown')}] {
+                    doc.metadata.get('source', 'unknown')}"
                 f"\n{doc.page_content}"
                 for doc in docs
             )
@@ -573,6 +599,8 @@ class CodeIndexerAgent(Agent):
                 if isinstance(response, str):
                     return response
                 # If response is a ChatResult or similar, convert to string
+                if hasattr(response, 'content'):
+                    return str(response.content)
                 return str(response)
             except (AttributeError, TypeError):
                 # Fallback to _generate if invoke is not available
@@ -590,7 +618,7 @@ class CodeIndexerAgent(Agent):
             Details: Error processing query: {str(e)}
             """
 
-    def step(self, state) -> Action:
+    def step(self, state):
         """Process the current state and return next action."""
         observation = state.get_last_observation()
 
@@ -652,7 +680,8 @@ class CodeIndexerAgent(Agent):
 
                     if ext == '.py':
                         # Use our basic Python parser
-                        parsed_docs = self._parse_code_structure(file_path, content)
+                        parsed_docs = self._parse_code_structure(
+                            file_path, content)
                     else:
                         # For non-Python files, create a simple document
                         parsed_docs = [
@@ -687,7 +716,8 @@ class CodeIndexerAgent(Agent):
                     filtered_metadata[key] = str(value)
 
             filtered_splits.append(
-                Document(page_content=doc.page_content, metadata=filtered_metadata)
+                Document(page_content=doc.page_content,
+                         metadata=filtered_metadata)
             )
 
         # Create a new collection with updated documents
@@ -732,3 +762,63 @@ class CodeIndexerAgent(Agent):
             return 0
 
         return intersection / union
+
+    def start_file_watcher(self):
+        """Start watching for file changes in the codebase."""
+        self.event_handler = CodebaseChangeHandler(self)
+        self.observer = Observer()
+        self.observer.schedule(self.event_handler, self.codebase_path, recursive=True)
+        self.observer.start()
+        logger.info(f"CodeIndexerAgent: Started file watcher for {self.codebase_path}")
+
+    def stop_file_watcher(self):
+        """Stop the file watcher."""
+        if hasattr(self, 'observer'):
+            self.observer.stop()
+            self.observer.join()
+            logger.info("CodeIndexerAgent: Stopped file watcher")
+
+
+class CodebaseChangeHandler(FileSystemEventHandler):
+    """Handler for file system events to trigger re-indexing."""
+    
+    def __init__(self, indexer):
+        self.indexer = indexer
+        self.last_update = 0
+        self.update_delay = 5  # Minimum seconds between updates
+        self.pending_update = False
+        self._lock = threading.Lock()
+
+    def _debounced_update(self):
+        """Debounced update to prevent rapid consecutive updates."""
+        current_time = time.time()
+        with self._lock:
+            if current_time - self.last_update < self.update_delay:
+                if not self.pending_update:
+                    self.pending_update = True
+                    threading.Timer(self.update_delay, self._perform_update).start()
+                return
+            self._perform_update()
+
+    def _perform_update(self):
+        """Perform the actual update operation."""
+        with self._lock:
+            self.last_update = time.time()
+            self.pending_update = False
+            try:
+                logger.info("CodeIndexerAgent: Updating index due to file changes")
+                self.indexer.update_index()
+            except Exception as e:
+                logger.error(f"Error updating index: {e}")
+
+    def on_created(self, event):
+        if not event.is_directory:
+            self._debounced_update()
+
+    def on_modified(self, event):
+        if not event.is_directory:
+            self._debounced_update()
+
+    def on_deleted(self, event):
+        if not event.is_directory:
+            self._debounced_update()

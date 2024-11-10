@@ -1,5 +1,6 @@
 from openhands.events.observation.agent import AgentStateChangedObservation
 from openhands.events.observation.browse import BrowserOutputObservation
+from openhands.events.observation.code import CodeQueryObservationRes
 from openhands.events.observation.commands import (
     CmdOutputObservation,
     IPythonRunCellObservation,
@@ -29,6 +30,7 @@ observations = (
     ErrorObservation,
     AgentStateChangedObservation,
     UserRejectObservation,
+    CodeQueryObservationRes,
 )
 
 OBSERVATION_TYPE_TO_CLASS = {

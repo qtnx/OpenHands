@@ -135,6 +135,27 @@ class MyClass:
 print(MyClass().y)
 </file_edit>
 
+[4] The assistant can explore and analyze codebases using the code indexer functionality. This can be done by using the `explore_codebase` function with the following parameters:
+- query: The question or analysis request about the codebase
+- codebase_path: The path to the codebase directory (defaults to ".")
+
+For example:
+<execute_ipython>
+explore_codebase("What does the Calculator class do?", codebase_path="/workspace/sample")
+</execute_ipython>
+
+The code indexer can help with:
+- Understanding code structure and functionality
+- Finding relevant code sections
+- Analyzing class and function relationships
+- Identifying patterns and implementations
+- Answering questions about the codebase
+
+IMPORTANT: When exploring large codebases:
+1. Start with high-level questions to understand the overall structure
+2. Break down complex queries into smaller, focused questions
+3. Use specific paths when exploring particular directories or files
+4. Combine code indexing with file reading for detailed analysis
 
 {% endset %}
 {% set BROWSING_PREFIX %}

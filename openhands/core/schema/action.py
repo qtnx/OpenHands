@@ -86,5 +86,8 @@ class ActionTypeSchema(BaseModel):
     SEND_PR: str = Field(default='send_pr')
     """Send a PR to github."""
 
+    CODE_INDEXER: str = Field(default='code_indexer')
+    """Index code."""
+
 
 ActionType = ActionTypeSchema()

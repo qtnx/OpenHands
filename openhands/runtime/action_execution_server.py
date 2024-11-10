@@ -15,6 +15,7 @@ import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from zipfile import ZipFile
+import tomli
 
 from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
@@ -24,6 +25,8 @@ from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from uvicorn import run
 
+from openhands.events.observation.code import CodeQueryObservationRes
+from openhands.runtime.plugins import CodeIndexerPlugin
 from openhands.core.logger import openhands_logger as logger
 from openhands.events.action import (
     Action,
@@ -33,6 +36,7 @@ from openhands.events.action import (
     FileReadAction,
     FileWriteAction,
     IPythonRunCellAction,
+    CodeIndexerAction
 )
 from openhands.events.observation import (
     CmdOutputObservation,
@@ -40,6 +44,7 @@ from openhands.events.observation import (
     FileReadObservation,
     FileWriteObservation,
     IPythonRunCellObservation,
+    CodeQueryObservation,
     Observation,
 )
 from openhands.events.serialization import event_from_dict, event_to_dict
@@ -75,6 +80,28 @@ def verify_api_key(api_key: str = Depends(api_key_header)):
     return api_key
 
 
+def load_runtime_config():
+    """Load runtime configuration from TOML file."""
+    config_path = Path(__file__).parent / "runtime.config.toml"
+    logger.debug(f"Loading config from {config_path}")
+    try:
+        with open(config_path, "rb") as f:
+            return tomli.load(f)
+    except FileNotFoundError:
+        logger.warning(f"Config file not found at {config_path}, using defaults")
+        return {
+            "plugins": {
+                "enabled": ["jupyter", "agent_skills", "code_indexer"],
+                "jupyter": {},
+                "code_indexer": {},
+                "agent_skills": {}
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error loading config: {e}")
+        return {}
+
+
 class ActionExecutor:
     """ActionExecutor is running inside docker sandbox.
     It is responsible for executing actions received from OpenHands backend and producing observations.
@@ -87,7 +114,9 @@ class ActionExecutor:
         username: str,
         user_id: int,
         browsergym_eval_env: str | None,
+        config: dict | None = None,
     ) -> None:
+        self.config = config or load_runtime_config()
         self.plugins_to_load = plugins_to_load
         self._initial_pwd = work_dir
         self.username = username
@@ -128,7 +157,20 @@ class ActionExecutor:
             logger.debug(f'AgentSkills initialized: {obs}')
 
         await self._init_bash_commands()
+
+        # Initialize code indexer if available
+        if 'code_indexer' in self.plugins:
+            try:
+                await self._init_code_indexer()
+            except Exception as e:
+                logger.error(f"Failed to initialize code indexer: {e}")
+                raise e
+
         logger.debug('Runtime client initialized.')
+
+    async def _init_code_indexer(self):
+        if 'code_indexer' in self.plugins:
+            await self.plugins['code_indexer'].initialize_rag()
 
     async def _init_plugin(self, plugin: Plugin):
         await plugin.initialize(self.username)
@@ -160,7 +202,12 @@ class ActionExecutor:
     async def run_action(self, action) -> Observation:
         async with self.lock:
             action_type = action.action
-            logger.debug(f'Running action:\n{action}')
+            logger.debug(f'Running action:\n{action} \nType: {action_type}')
+            
+            if not hasattr(self, action_type):
+                return ErrorObservation(content=f"Action type {action_type} not found.")
+
+            logger.debug(f'OK, start running action type: {action_type}')
             observation = await getattr(self, action_type)(action)
             logger.debug(f'Action output:\n{observation}')
             return observation
@@ -294,6 +341,32 @@ class ActionExecutor:
     async def browse_interactive(self, action: BrowseInteractiveAction) -> Observation:
         return await browse(action, self.browser)
 
+    async def code_indexer(self, action: CodeIndexerAction) -> Observation:
+        """Handle code indexer actions."""
+        logger.debug(f"Running code indexer query: {action.query} {action.codebase_path}")
+        try:
+            if 'code_indexer' not in self.plugins:
+                return ErrorObservation("Code indexer plugin not initialized")
+            
+            indexer = self.plugins['code_indexer']
+            
+            if not isinstance(indexer, CodeIndexerPlugin):
+                return ErrorObservation("Code indexer plugin not initialized")
+
+            if action.reindex_request:
+                await indexer.update_index()
+
+            # Ensure query returns an awaitable
+            response = indexer.query(action.query)
+            # Update CodeQueryObservation to match its expected parameters
+            return CodeQueryObservationRes(query=action.query, content=response)
+        except Exception as e:
+            logger.error(f"Error in code indexer: {e}")
+            return ErrorObservation(
+                content=f"Code indexer error: {str(e)}",
+                error_id='CODE_INDEXER_ERROR',
+            )
+
     def close(self):
         self.bash_session.close()
         self.browser.close()
@@ -316,13 +389,27 @@ if __name__ == '__main__':
     )
     # example: python client.py 8000 --working-dir /workspace --plugins JupyterRequirement
     args = parser.parse_args()
+    
+    # Load runtime config
+    config = load_runtime_config()
+    
+    # Use config to determine plugins if not specified in args
+    # if not args.plugins:
+    # args.plugins = config.get("plugins", {}).get("enabled", ["jupyter", "agent_skills", "code_indexer"])
+    args.plugins = ["jupyter", "agent_skills", "code_indexer"]
+    # args.plugins = ["code_indexer"]
 
     plugins_to_load: list[Plugin] = []
     if args.plugins:
         for plugin in args.plugins:
             if plugin not in ALL_PLUGINS:
                 raise ValueError(f'Plugin {plugin} not found')
-            plugins_to_load.append(ALL_PLUGINS[plugin]())  # type: ignore
+            plugin_instance = ALL_PLUGINS[plugin]()
+            # Pass plugin-specific config if available
+            if plugin in config.get("plugins", {}):
+                plugin_instance.config = config["plugins"][plugin]
+            plugins_to_load.append(plugin_instance)
+    logger.debug(f"Plugins to load: {plugins_to_load} args: {args.plugins}")
 
     client: ActionExecutor | None = None
 
@@ -335,6 +422,7 @@ if __name__ == '__main__':
             username=args.username,
             user_id=args.user_id,
             browsergym_eval_env=args.browsergym_eval_env,
+            config=config
         )
         await client.ainit()
         yield
@@ -399,6 +487,7 @@ if __name__ == '__main__':
                 raise HTTPException(status_code=400, detail='Invalid action type')
             client.last_execution_time = time.time()
             observation = await client.run_action(action)
+            logger.debug(f"Observation response: {observation}")
             return event_to_dict(observation)
         except Exception as e:
             logger.error(

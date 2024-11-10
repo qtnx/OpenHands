@@ -3,6 +3,7 @@ import os
 import traceback
 from collections import deque
 from itertools import islice
+from typing import Optional, Union, List, cast
 
 from litellm import ModelResponse
 
@@ -31,6 +32,7 @@ from openhands.events.observation import (
     IPythonRunCellObservation,
     UserRejectObservation,
 )
+from openhands.events.observation.code import CodeQueryObservationRes
 from openhands.events.observation.error import ErrorObservation
 from openhands.events.observation.observation import Observation
 from openhands.events.serialization.event import truncate_content
@@ -42,6 +44,9 @@ from openhands.runtime.plugins import (
 )
 from openhands.utils.microagent import MicroAgent
 from openhands.utils.prompt import PromptManager
+from openhands.events.action.indexer import CodeIndexerAction
+
+PLAN_CAUSE_CODE = 100
 
 
 class CodeActAgent(Agent):
@@ -132,6 +137,7 @@ class CodeActAgent(Agent):
         self.plan_approved = False  # Track if plan has been approved
         self.plan = None  # Store the execution plan
         self.waiting_for_feedback = False
+        self.current_step = None
 
     def get_action_message(
         self,
@@ -167,6 +173,10 @@ class CodeActAgent(Agent):
             rather than being returned immediately. They will be processed later when all corresponding
             tool call results are available.
         """
+
+        if isinstance(action, CodeIndexerAction):
+            logger.debug(f'CodeIndexerAction in get_action_message: {action}')
+
         # create a regular message from an event
         if isinstance(
             action,
@@ -176,6 +186,7 @@ class CodeActAgent(Agent):
                 IPythonRunCellAction,
                 FileEditAction,
                 BrowseInteractiveAction,
+                CodeIndexerAction
             ),
         ) or (isinstance(action, AgentFinishAction) and action.source == 'agent'):
             if self.function_calling_active:
@@ -187,6 +198,9 @@ class CodeActAgent(Agent):
 
                 llm_response: ModelResponse = tool_metadata.model_response
                 assistant_msg = llm_response.choices[0].message
+                logger.debug(
+                        f'Action message in function calling mode: {assistant_msg} {tool_metadata}'
+                )
                 # Add the LLM message (assistant) that initiated the tool calls
                 # (overwrites any previous message with the same response_id)
                 pending_tool_call_action_messages[llm_response.id] = Message(
@@ -211,6 +225,10 @@ class CodeActAgent(Agent):
                     )
                 ]
         elif isinstance(action, MessageAction):
+            logger.debug(f'MessageAction in get_action_message: {action}')
+            # skip if source is planning
+            if action.cause == PLAN_CAUSE_CODE and not action.wait_for_response and not self.waiting_for_feedback:
+                return []
             role = 'user' if action.source == 'user' else 'assistant'
             content = [TextContent(text=action.content or '')]
             if self.llm.vision_is_active() and action.images_urls:
@@ -297,6 +315,9 @@ class CodeActAgent(Agent):
             text = 'OBSERVATION:\n' + truncate_content(obs.content, max_message_chars)
             text += '\n[Last action has been rejected by the user]'
             message = Message(role='user', content=[TextContent(text=text)])
+        elif isinstance(obs, CodeQueryObservationRes):
+            text = obs_prefix + obs.message
+            message = Message(role='user', content=[TextContent(text=text)])
         else:
             # If an observation message is not returned, it will cause an error
             # when the LLM tries to return the next message
@@ -305,11 +326,15 @@ class CodeActAgent(Agent):
         if self.function_calling_active:
             # Update the message as tool response properly
             if (tool_call_metadata := obs.tool_call_metadata) is not None:
+                # Store the tool call response message for later processing in get_action_message
                 tool_call_id_to_message[tool_call_metadata.tool_call_id] = Message(
                     role='tool',
                     content=message.content,
                     tool_call_id=tool_call_metadata.tool_call_id,
                     name=tool_call_metadata.function_name,
+                )
+                logger.debug(
+                    f'Tool call message updated: {tool_call_id_to_message[tool_call_metadata.tool_call_id]} will be removed'
                 )
                 # No need to return the observation message
                 # because it will be added by get_action_message when all the corresponding
@@ -332,10 +357,12 @@ class CodeActAgent(Agent):
             if last_user_message:
                 self.waiting_for_feedback = False
                 return self._handle_plan_feedback(last_user_message, state)
-            return MessageAction(
+            ac = MessageAction(
                 content='Waiting for your feedback on the plan...',
-                wait_for_response=True,
+                wait_for_response=True
             )
+            ac._cause = PLAN_CAUSE_CODE
+            return ac
 
         # Create and get approval for plan if not done yet
         if not self.plan_approved:
@@ -347,10 +374,6 @@ class CodeActAgent(Agent):
                 ) = f"""You are an AI task planner responsible for creating detailed execution plans for complex tasks that will be solved by multiple AI language models with varying capabilities. Your goal is to analyze the given task, create a comprehensive plan, and present it in a structured format.
 
 Please create a detailed execution plan for this task. Follow these steps:
-
-<user_prompt>
-{self.initial_user_message}
-</user_prompt>
 
 1. Analyze the task complexity and requirements.
 2. Rank the task into tiers based on the required model capabilities.
@@ -396,8 +419,9 @@ Define the expected outcomes at each main step:
 </execution_plan>
 
 Please ensure that your plan is comprehensive, clear, and addresses all aspects of the task. Pay special attention to providing detailed substeps for each main action to be taken.
+
+User prompt will be provided next.
                                          """
-                print('Prompt: ', prompt)
                 plan_messages.append(
                     Message(role='system', content=[TextContent(text=prompt)])
                 )
@@ -410,7 +434,7 @@ Please ensure that your plan is comprehensive, clear, and addresses all aspects 
 
                 # Ask user to review plan
                 self.waiting_for_feedback = True
-                return MessageAction(
+                ac = MessageAction(
                     content=f'Here is my proposed execution plan:\n\n{self.plan}\n\n'
                     f'Please review this plan and respond with:\n'
                     f"- 'approve' to proceed with execution\n"
@@ -418,6 +442,8 @@ Please ensure that your plan is comprehensive, clear, and addresses all aspects 
                     f"- 'reject' to cancel execution",
                     wait_for_response=True,
                 )
+                ac._cause = PLAN_CAUSE_CODE
+                return ac
 
         # Proceed with normal execution once plan is approved
         return self._execute_step(state)
@@ -428,10 +454,12 @@ Please ensure that your plan is comprehensive, clear, and addresses all aspects 
 
         if 'approve' in feedback:
             self.plan_approved = True
-            return MessageAction(
+            ac = MessageAction(
                 content='Plan approved. Proceeding with execution.',
                 wait_for_response=False,
             )
+            ac._cause = 100
+            return ac
         elif 'reject' in feedback:
             self.plan = None
             return AgentFinishAction(thought='Plan rejected. Ending execution.')
@@ -466,7 +494,7 @@ Please ensure that your plan is comprehensive, clear, and addresses all aspects 
 
             # Request approval for new plan
             self.waiting_for_feedback = True
-            return MessageAction(
+            ac = MessageAction(
                 content=f'Here is my revised execution plan:\n\n{self.plan}\n\n'
                 f'Please review this plan and respond with:\n'
                 f"- 'approve' to proceed with execution\n"
@@ -474,6 +502,8 @@ Please ensure that your plan is comprehensive, clear, and addresses all aspects 
                 f"- 'reject' to cancel execution",
                 wait_for_response=True,
             )
+            ac._cause = PLAN_CAUSE_CODE
+            return ac
 
     def _execute_step(self, state: State) -> Action:
         """Execute a single step after plan is approved"""
@@ -481,15 +511,7 @@ Please ensure that your plan is comprehensive, clear, and addresses all aspects 
         messages = self._get_messages(state)
 
         # Add plan context to the messages
-        plan_context = Message(
-            role='user',
-            content=[
-                TextContent(
-                    text=f'Following the approved plan:\n{self.plan}\n\nPlease execute the next step.'
-                )
-            ],
-        )
-        messages.append(plan_context)
+        
 
         params: dict = {
             'messages': self.llm.format_messages_for_llm(messages),
@@ -582,6 +604,20 @@ Please ensure that your plan is comprehensive, clear, and addresses all aspects 
                 )
             )
 
+        plan_context = Message(
+            role='user',
+            content=[
+                TextContent(
+                    # cache_prompt=self.llm.is_caching_prompt_active(),
+
+                    text=f'Following the approved plan:\n{self.plan}\n\nPlease execute the next step.' if self.plan_approved
+                    else 'Please provide an execution plan for the task.' if not self.plan
+                    else 'Previous plan: ' + self.plan,
+                )
+            ],
+        )
+        messages.append(plan_context)
+
         pending_tool_call_action_messages: dict[str, Message] = {}
         tool_call_id_to_message: dict[str, Message] = {}
         events = list(state.history)
@@ -622,6 +658,11 @@ Please ensure that your plan is comprehensive, clear, and addresses all aspects 
                         messages_to_add.append(tool_call_id_to_message[tool_call.id])
                         tool_call_id_to_message.pop(tool_call.id)
                     _response_ids_to_remove.append(response_id)
+
+            logger.debug(f'Pending tool call action messages: {pending_tool_call_action_messages}')
+            logger.debug(f'Tool call ID to message: {tool_call_id_to_message}')
+            logger.debug(f'Messages to add: {messages_to_add}')
+            logger.debug(f'Response IDs to remove: {_response_ids_to_remove}')
             # Cleanup the processed pending tool messages
             for response_id in _response_ids_to_remove:
                 pending_tool_call_action_messages.pop(response_id)
@@ -676,5 +717,7 @@ Please ensure that your plan is comprehensive, clear, and addresses all aspects 
             if latest_user_message:
                 reminder_text = f'\n\nENVIRONMENT REMINDER: You have {state.max_iterations - state.iteration} turns left to complete the task. When finished reply with <finish></finish>.'
                 latest_user_message.content.append(TextContent(text=reminder_text))
+
+        logger.debug(f'Final get Messages: {messages}')
 
         return messages

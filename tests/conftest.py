@@ -5,6 +5,17 @@ from unittest.mock import patch
 
 import pytest
 
+# Configure pytest-asyncio
+pytest_plugins = ('pytest_asyncio',)
+
+# Set environment variables for testing
+@pytest.fixture(autouse=True)
+def setup_test_env():
+    os.environ['SESSION_API_KEY'] = 'test_key'
+    yield
+    if 'SESSION_API_KEY' in os.environ:
+        del os.environ['SESSION_API_KEY']
+
 
 @pytest.fixture(scope='session')
 def test_project_dir():
